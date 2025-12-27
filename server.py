@@ -40,10 +40,7 @@ def save_todos(todos):
 @mcp.tool()
 def get_todos_overview() -> str:
     """
-    DATA DISCOVERY ELICITATION PATTERN
-    
-    Shows what todos exist - AI discovers the data structure before taking action.
-    This prevents the AI from making assumptions about what exists.
+    Shows what todos exist with counts and categories.
     
     Returns:
         Overview of all todos with counts and categories
@@ -56,8 +53,7 @@ def get_todos_overview() -> str:
 No todos yet! Ready to add your first task.
 
 💡 **Try:**
-- Use `create_todo_interactive` to add a todo with prompts
-- Or use `add_todo` for quick adds
+- Use `create_todo` to add a todo
 """
     
     # Count by status
@@ -99,12 +95,9 @@ class TodoInput:
 
 
 @mcp.tool()
-async def create_todo_interactive(ctx: Context) -> str:
+async def create_todo(ctx: Context) -> str:
     """
-    USER ELICITATION PATTERN
-    
-    Interactively create a todo by asking the user for details step-by-step.
-    This is better than requiring all parameters upfront.
+    Create a todo by collecting details step-by-step.
     
     Returns:
         Confirmation message with todo details
@@ -160,12 +153,9 @@ class ListFilter:
 
 
 @mcp.tool()
-async def list_todos_interactive(ctx: Context) -> str:
+async def list_todos(ctx: Context) -> str:
     """
-    USER ELICITATION PATTERN
-    
-    List todos with interactive filter selection.
-    Asks the user which status to filter by.
+    List todos with filter selection.
     
     Returns:
         Formatted list of filtered todos
@@ -190,7 +180,7 @@ status: pending
         todos = load_todos()
         
         if not todos:
-            return "📋 No todos found. Use `create_todo_interactive` to add one!"
+            return "📋 No todos found. Use `create_todo` to add one!"
         
         # Filter by status
         if filter_input.status == "pending":
@@ -228,12 +218,10 @@ class CompleteTodoInput:
 
 
 @mcp.tool()
-async def complete_todo_interactive(ctx: Context) -> str:
+async def complete_todo(ctx: Context) -> str:
     """
-    USER ELICITATION PATTERN
-    
-    Mark a todo as completed with interactive ID selection.
-    First shows available pending todos, then asks which to complete.
+    Mark a todo as completed.
+    Shows available pending todos, then asks which to complete.
     
     Returns:
         Confirmation message
@@ -285,12 +273,10 @@ class DeleteTodoInput:
 
 
 @mcp.tool()
-async def delete_todo_interactive(ctx: Context) -> str:
+async def delete_todo(ctx: Context) -> str:
     """
-    USER ELICITATION PATTERN
-    
-    Delete a todo with interactive ID selection.
-    First shows available todos, then asks which to delete.
+    Delete a todo.
+    Shows available todos, then asks which to delete.
     
     Returns:
         Confirmation message
