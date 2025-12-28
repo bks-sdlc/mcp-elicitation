@@ -6,8 +6,9 @@ Learn **MCP Elicitation Patterns** with a simple **Todo App** using **FastMCP**.
 
 - 📊 **Data Discovery Elicitation** - AI discovers todos before acting
 - 💬 **User Elicitation** - Interactive todo creation with step-by-step prompts
-- ✅ Complete, list, and delete todos
-- 🎯 Priority levels and status tracking
+- ✅ Complete, list, and delete todos (supports multi-completion)
+- 🎯 Priority filtering - complete only high/medium/low priority todos
+- 🔍 Status tracking and smart filtering
 
 ---
 
@@ -66,7 +67,8 @@ Example queries:
 - "Show me my todos overview"
 - "Create a todo" (interactive prompts)
 - "List my todos" (choose filter)
-- "Complete a todo" (select from list)
+- "Complete my todo" (choose priority filter, then select)
+- "Complete todos 1,2,3" (multi-completion)
 - "Delete a todo" (select from list)
 
 ---
@@ -88,10 +90,10 @@ todo/
 - `get_todos_overview()` - Shows all todos with stats
 
 **User Elicitation (Interactive):**
-- `create_todo_interactive()` - Create todo with prompts
-- `list_todos_interactive()` - List with filter selection
-- `complete_todo_interactive()` - Complete with selection
-- `delete_todo_interactive()` - Delete with confirmation
+- `create_todo()` - Create todo with prompts
+- `list_todos()` - List with filter selection
+- `complete_todo()` - Complete with priority filter + selection (multi-todo support)
+- `delete_todo()` - Delete with confirmation
 
 ---
 
@@ -109,10 +111,12 @@ def get_todos_overview() -> str:
     return formatted_overview
 ```
 
-**Example:** "Complete my high priority todo"
-- AI calls `get_todos_overview()` first
-- Discovers Todo #3 is high priority
-- Completes it automatically
+**Example:** "Complete my todo"
+- AI calls `complete_todo()`
+- Step 1: User selects priority filter (e.g., "high")
+- Server shows only filtered pending todos
+- Step 2: User selects which todo(s) to complete
+- Todos completed with confirmation
 
 ### 2. User Elicitation (Interactive)
 
@@ -120,7 +124,7 @@ Tools pause to collect structured input step-by-step:
 
 ```python
 @mcp.tool()
-async def create_todo_interactive(ctx: Context) -> str:
+async def create_todo(ctx: Context) -> str:
     result = await ctx.elicit(
         message="Provide todo details",
         response_type=TodoInput

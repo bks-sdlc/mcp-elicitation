@@ -228,52 +228,75 @@ async def complete_todo(ctx: Context) -> str:
     Returns:
         Confirmation message
     """
-    # First show what's available (data discovery)
+    # First ask for priority filter to show relevant todos
     todos = load_todos()
     pending = [t for t in todos if t['status'] == 'pending']
     
     if not pending:
         return "✅ No pending todos to complete!"
     
-    # Build prompt with available todos
-    prompt_lines = ["📋 **Complete Todos**\n\nAvailable pending todos:\n"]
+    # First elicit priority filter
+    @dataclass
+    class PriorityFilterInput:
+        priority_filter: Literal["all", "high", "medium", "low"] = "all"
+    
+    filter_result = await ctx.elicit(
+        message="**Filter by priority?**\nChoose: all, high, medium, or low",
+        response_type=PriorityFilterInput
+    )
+    
+    if filter_result.action != "accept":
+        return "❌ Complete operation cancelled."
+    
+    priority_filter = filter_result.data.priority_filter
+    
+    # Filter pending todos by priority
+    if priority_filter != "all":
+        pending = [t for t in pending if t['priority'] == priority_filter]
+    
+    if not pending:
+        return f"No pending {priority_filter} priority todos found."
+    
+    # Build prompt with filtered todos
+    prompt_lines = [f"📋 **Complete {priority_filter.title()} Priority Todos**\n\nAvailable todos:\n"]
     for todo in pending:
         priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}[todo['priority']]
         prompt_lines.append(f"  {priority_icon} [{todo['id']}] {todo['title']}")
     
     prompt_lines.append("\n**Which todos would you like to complete?**\n")
     prompt_lines.append("Enter one or more todo IDs (comma-separated for multiple like '1,2,3')\n")
-    prompt_lines.append("Optionally filter by priority: all, high, medium, or low\n")
-    prompt_lines.append("```\ntodo_ids: 1,2,3\npriority_filter: high\n```")
+    
+    @dataclass
+    class TodoIdsInput:
+        todo_ids: str
     
     result = await ctx.elicit(
         message="\n".join(prompt_lines),
-        response_type=CompleteTodoInput
+        response_type=TodoIdsInput
     )
     
     if result.action == "accept":
-        input_data = result.data
-        
         # Parse comma-separated IDs
         try:
-            todo_ids = [int(id.strip()) for id in input_data.todo_ids.split(',')]
+            todo_ids = [int(id.strip()) for id in result.data.todo_ids.split(',')]
         except ValueError:
             return "❌ Invalid todo IDs format. Please use comma-separated numbers like '1,2,3' or a single number."
-        
-        # Filter by priority if specified
-        target_todos = todos
-        if input_data.priority_filter != "all":
-            target_todos = [t for t in todos if t['priority'] == input_data.priority_filter]
         
         completed = []
         not_found = []
         already_completed = []
         
+        # Get list of pending todo IDs for validation
+        pending_ids = {t['id'] for t in pending}
+        
         for todo_id in todo_ids:
-            found = False
-            for todo in target_todos:
+            if todo_id not in pending_ids:
+                not_found.append(str(todo_id))
+                continue
+                
+            # Find todo in full list and update
+            for todo in todos:
                 if todo['id'] == todo_id:
-                    found = True
                     if todo['status'] == 'completed':
                         already_completed.append(f"#{todo_id} {todo['title']}")
                     else:
@@ -281,8 +304,6 @@ async def complete_todo(ctx: Context) -> str:
                         todo['completed_at'] = datetime.now().isoformat()
                         completed.append(f"#{todo_id} {todo['title']}")
                     break
-            if not found:
-                not_found.append(str(todo_id))
         
         # Save if any changes were made
         if completed:
@@ -295,7 +316,7 @@ async def complete_todo(ctx: Context) -> str:
         if already_completed:
             messages.append(f"⚠️  **Already completed ({len(already_completed)}):**\n" + "\n".join(f"  • {t}" for t in already_completed))
         if not_found:
-            messages.append(f"❌ **Not found:** {', '.join(not_found)}")
+            messages.append(f"❌ **Not found in {priority_filter} priority todos:** {', '.join(not_found)}")
         
         return "\n\n".join(messages) if messages else "No todos were completed."
     elif result.action == "decline":

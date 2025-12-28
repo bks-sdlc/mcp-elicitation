@@ -142,10 +142,11 @@ This document describes the end-to-end architecture of the MCP Todo application,
    - Returns formatted list
 
 4. **`complete_todo(ctx: Context)`**
-   - Shows pending todos first
-   - Collects: todo_id
-   - Uses `CompleteTodoInput` dataclass
-   - Updates status and timestamp
+   - Step 1: Collects priority filter (all/high/medium/low)
+   - Step 2: Shows filtered pending todos
+   - Step 3: Collects comma-separated todo IDs for multi-completion
+   - Uses two elicitation calls (PriorityFilterInput, TodoIdsInput)
+   - Updates status and timestamp for multiple todos
 
 5. **`delete_todo(ctx: Context)`**
    - Shows all todos first
@@ -340,14 +341,14 @@ Request: {
 
 **Example Use Case**:
 ```
-User: "Complete my high priority todo"
+User: "What's on my todo list?"
 
 Flow:
 1. AI calls get_todos_overview()
-2. Discovers Todo #1 is high priority
-3. AI calls complete_todo()
-4. Elicits todo_id = 1
-5. Todo completed
+2. Server loads todos from JSON
+3. Returns formatted overview with counts and stats
+4. AI presents information to user
+5. No user input required
 ```
 
 ### Pattern 2: User Elicitation
@@ -375,6 +376,21 @@ Flow:
 8. User: "medium"
 9. Server creates todo
 10. Returns confirmation
+```
+
+**Multi-Todo Completion Example**:
+```
+User: "Complete my todos"
+
+Flow:
+1. AI calls complete_todo()
+2. First elicitation: priority_filter
+3. User selects priority (e.g., "high")
+4. Server filters: shows only high priority pending todos
+5. Second elicitation: todo_ids
+6. User enters "1,3,5" (multiple IDs)
+7. Server completes all three todos
+8. Returns batch confirmation
 ```
 
 ---
