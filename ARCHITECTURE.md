@@ -95,68 +95,32 @@ This pattern is used in the `complete_todo()` tool to first filter todos by prio
 
 This document describes the end-to-end architecture of the MCP Todo application, including how VS Code (MCP Host) communicates with the FastMCP server.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                          VS Code (MCP Host)                      │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │               GitHub Copilot / MCP Client                   │ │
-│  │  - User interacts via chat interface                       │ │
-│  │  - Sends natural language requests                         │ │
-│  │  - Displays responses to user                              │ │
-│  └────────────────────────────────────────────────────────────┘ │
-│                              │                                   │
-│                              │ MCP Protocol (JSON-RPC)          │
-│                              │ over stdio                        │
-└──────────────────────────────┼──────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     FastMCP Server Process                       │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │  uv run python server.py                                   │ │
-│  │                                                            │ │
-│  │  ┌──────────────────────────────────────────────────────┐ │ │
-│  │  │         MCP Protocol Handler (FastMCP)               │ │ │
-│  │  │  - Receives JSON-RPC requests                        │ │ │
-│  │  │  - Routes to appropriate tools                       │ │ │
-│  │  │  - Handles elicitation flow                          │ │ │
-│  │  │  - Returns responses                                 │ │ │
-│  │  └──────────────────────────────────────────────────────┘ │ │
-│  │                          │                                 │ │
-│  │  ┌───────────────────────┴──────────────────────────────┐ │ │
-│  │  │              5 MCP Tools                             │ │ │
-│  │  │                                                      │ │ │
-│  │  │  1. get_todos_overview()                            │ │ │
-│  │  │     └─ Data discovery pattern                       │ │ │
-│  │  │                                                      │ │ │
-│  │  │  2. create_todo(ctx)                                │ │ │
-│  │  │     └─ User elicitation pattern                     │ │ │
-│  │  │                                                      │ │ │
-│  │  │  3. list_todos(ctx)                                 │ │ │
-│  │  │     └─ User elicitation pattern                     │ │ │
-│  │  │                                                      │ │ │
-│  │  │  4. complete_todo(ctx)                              │ │ │
-│  │  │     └─ User elicitation pattern                     │ │ │
-│  │  │                                                      │ │ │
-│  │  │  5. delete_todo(ctx)                                │ │ │
-│  │  │     └─ User elicitation pattern                     │ │ │
-│  │  └──────────────────────────────────────────────────────┘ │ │
-│  │                          │                                 │ │
-│  │  ┌───────────────────────┴──────────────────────────────┐ │ │
-│  │  │           Data Layer (JSON Storage)                  │ │ │
-│  │  │                                                      │ │ │
-│  │  │  - load_todos()                                     │ │ │
-│  │  │  - save_todos()                                     │ │ │
-│  │  │  - File: todos.json                                 │ │ │
-│  │  └──────────────────────────────────────────────────────┘ │ │
-│  └────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │   todos.json         │
-                    │  (Data Persistence)  │
-                    └──────────────────────┘
+```mermaid
+%%{init: {'theme':'dark'}}%%
+graph TB
+    subgraph VSCode["VS Code MCP Host"]
+        User["User"] --> Copilot["GitHub Copilot"] 
+        Copilot --> Client["MCP Client"]
+        Client --> User
+    end
+    
+    Client <--> Handler["MCP Protocol Handler"]
+    
+    subgraph FastMCP["FastMCP Server Process"]
+        Handler --> Tools
+        
+        subgraph Tools["5 MCP Tools"]
+            T1["get_todos_overview"]
+            T2["create_todo"]
+            T3["list_todos"]
+            T4["complete_todo"]
+            T5["delete_todo"]
+        end
+        
+        Tools --> Data["Data Layer"]
+    end
+    
+    Data <--> DB[("todos.json")]
 ```
 
 ---
@@ -284,62 +248,49 @@ This document describes the end-to-end architecture of the MCP Todo application,
 
 ### 1. Standard Tool Call (Data Discovery)
 
-```
-User: "Show me my todos"
-   │
-   ▼
-[VS Code MCP Client]
-   │ JSON-RPC: tools/call
-   │ { "name": "get_todos_overview" }
-   ▼
-[FastMCP Server]
-   │ Execute tool
-   │ load_todos()
-   │ Format response
-   ▼
-[VS Code MCP Client]
-   │ Display result
-   ▼
-User sees: "📋 **Your Todos Overview**\n..."
+```mermaid
+%%{init: {'theme':'dark'}}%%
+sequenceDiagram
+    participant U as User
+    participant V as VS Code
+    participant S as Server
+    participant D as todos.json
+    
+    U->>V: Show me my todos
+    V->>S: get_todos_overview
+    S->>D: load_todos
+    D-->>S: data
+    S->>S: format
+    S-->>V: overview
+    V-->>U: display
 ```
 
 ### 2. Elicitation Flow (User Input Collection)
 
-```
-User: "Create a todo"
-   │
-   ▼
-[VS Code MCP Client]
-   │ JSON-RPC: tools/call
-   │ { "name": "create_todo" }
-   ▼
-[FastMCP Server]
-   │ Tool executes
-   │ Calls ctx.elicit(TodoInput)
-   │
-   │ JSON-RPC: elicitation/request
-   │ { "schema": { "title": "str", "description": "str", ... } }
-   ▼
-[VS Code MCP Client]
-   │ Prompts user for each field:
-   │ - "title?"
-   │ - "description?"
-   │ - "priority?"
-   │
-   │ JSON-RPC: elicitation/response
-   │ { "action": "accept", "data": { ... } }
-   ▼
-[FastMCP Server]
-   │ Receives user input
-   │ Creates todo
-   │ save_todos()
-   │
-   │ Returns success message
-   ▼
-[VS Code MCP Client]
-   │ Display result
-   ▼
-User sees: "✅ **Todo Created!**\n..."
+```mermaid
+%%{init: {'theme':'dark'}}%%
+sequenceDiagram
+    participant U as User
+    participant V as VS Code
+    participant S as Server
+    participant D as todos.json
+    
+    U->>V: Create a todo
+    V->>S: create_todo
+    S->>S: ctx.elicit
+    S->>V: request input
+    V->>U: title?
+    U->>V: Buy groceries
+    V->>U: description?
+    U->>V: Milk, eggs, bread
+    V->>U: priority?
+    U->>V: medium
+    V->>S: user data
+    S->>S: create todo
+    S->>D: save
+    D-->>S: ok
+    S-->>V: success
+    V-->>U: display
 ```
 
 ---
@@ -489,58 +440,37 @@ Flow:
 ## Data Flow
 
 ### Create Todo Flow
-```
-User Input (VS Code Chat)
-   ↓
-MCP Client (Copilot)
-   ↓ tools/call: create_todo
-FastMCP Server
-   ↓ ctx.elicit(TodoInput)
-MCP Client
-   ↓ Collect: title, description, priority
-User Input (Form Fields)
-   ↓
-MCP Client
-   ↓ elicitation/response
-FastMCP Server
-   ↓ Create todo object
-   ↓ load_todos()
-todos.json (read)
-   ↓ todos list
-FastMCP Server
-   ↓ Append new todo
-   ↓ save_todos()
-todos.json (write)
-   ↓ Success confirmation
-FastMCP Server
-   ↓ Return message
-MCP Client
-   ↓ Display
-User sees result (VS Code Chat)
+
+```mermaid
+%%{init: {'theme':'dark'}}%%
+flowchart LR
+    A[User] --> B[MCP Client]
+    B --> C[FastMCP Server]
+    C --> D[Elicit Input]
+    D --> E[User Provides Data]
+    E --> F[Create Todo]
+    F --> G[Load Todos]
+    G --> H[(todos.json)]
+    H --> I[Append]
+    I --> J[Save]
+    J --> H
+    J --> K[Confirmation]
+    K --> L[Display to User]
 ```
 
 ### List Todos Flow
-```
-User: "List my todos"
-   ↓
-MCP Client
-   ↓ tools/call: list_todos
-FastMCP Server
-   ↓ ctx.elicit(ListFilter)
-MCP Client
-   ↓ Collect: status filter
-User: "pending"
-   ↓
-MCP Client
-   ↓ elicitation/response
-FastMCP Server
-   ↓ load_todos()
-todos.json (read)
-   ↓ Filter by status
-   ↓ Format output
-FastMCP Server
-   ↓ Return formatted list
-MCP Client
-   ↓ Display
-User sees todos
+
+```mermaid
+%%{init: {'theme':'dark'}}%%
+flowchart LR
+    A[User] --> B[MCP Client]
+    B --> C[FastMCP Server]
+    C --> D[Elicit Filter]
+    D --> E[User Selects Status]
+    E --> F[Load Todos]
+    F --> G[(todos.json)]
+    G --> H[Filter]
+    H --> I[Format]
+    I --> J[Return List]
+    J --> K[Display to User]
 ```
