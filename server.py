@@ -213,15 +213,17 @@ status: pending
 
 @dataclass
 class CompleteTodoInput:
-    """Structure for completing a todo."""
-    todo_id: int
+    """Structure for completing todos."""
+    todo_ids: list[int]
+    priority_filter: Literal["all", "high", "medium", "low"] = "all"
 
 
 @mcp.tool()
 async def complete_todo(ctx: Context) -> str:
     """
-    Mark a todo as completed.
-    Shows available pending todos, then asks which to complete.
+    Mark todos as completed.
+    Shows available pending todos (optionally filtered by priority), then asks which to complete.
+    Supports completing multiple todos at once.
     
     Returns:
         Confirmation message
@@ -234,13 +236,15 @@ async def complete_todo(ctx: Context) -> str:
         return "✅ No pending todos to complete!"
     
     # Build prompt with available todos
-    prompt_lines = ["📋 **Complete a Todo**\n\nAvailable pending todos:\n"]
+    prompt_lines = ["📋 **Complete Todos**\n\nAvailable pending todos:\n"]
     for todo in pending:
         priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}[todo['priority']]
         prompt_lines.append(f"  {priority_icon} [{todo['id']}] {todo['title']}")
     
-    prompt_lines.append("\n**Which todo would you like to complete?**\n")
-    prompt_lines.append("```\ntodo_id: <number>\n```")
+    prompt_lines.append("\n**Which todos would you like to complete?**\n")
+    prompt_lines.append("Enter one or more todo IDs (comma-separated for multiple)\n")
+    prompt_lines.append("Optionally filter by priority: all, high, medium, or low\n")
+    prompt_lines.append("```\ntodo_ids: [1, 2, 3]\npriority_filter: high\n```")
     
     result = await ctx.elicit(
         message="\n".join(prompt_lines),
@@ -249,17 +253,45 @@ async def complete_todo(ctx: Context) -> str:
     
     if result.action == "accept":
         input_data = result.data
-        for todo in todos:
-            if todo['id'] == input_data.todo_id:
-                if todo['status'] == 'completed':
-                    return f"⚠️  Todo #{input_data.todo_id} is already completed!"
-                
-                todo['status'] = 'completed'
-                todo['completed_at'] = datetime.now().isoformat()
-                save_todos(todos)
-                return f"✅ Completed: {todo['title']}"
         
-        return f"❌ Todo #{input_data.todo_id} not found"
+        # Filter by priority if specified
+        target_todos = todos
+        if input_data.priority_filter != "all":
+            target_todos = [t for t in todos if t['priority'] == input_data.priority_filter]
+        
+        completed = []
+        not_found = []
+        already_completed = []
+        
+        for todo_id in input_data.todo_ids:
+            found = False
+            for todo in target_todos:
+                if todo['id'] == todo_id:
+                    found = True
+                    if todo['status'] == 'completed':
+                        already_completed.append(f"#{todo_id} {todo['title']}")
+                    else:
+                        todo['status'] = 'completed'
+                        todo['completed_at'] = datetime.now().isoformat()
+                        completed.append(f"#{todo_id} {todo['title']}")
+                    break
+            if not found:
+                not_found.append(str(todo_id))
+        
+        # Save if any changes were made
+        if completed:
+            save_todos(todos)
+        
+        # Build response message
+        messages = []
+        if completed:
+            messages.append(f"✅ **Completed ({len(completed)}):**\n" + "\n".join(f"  • {t}" for t in completed))
+        if already_completed:
+            messages.append(f"⚠️  **Already completed ({len(already_completed)}):**\n" + "\n".join(f"  • {t}" for t in already_completed))
+        if not_found:
+            messages.append(f"❌ **Not found:** {', '.join(not_found)}")
+        
+        return "\n\n".join(messages) if messages else "No todos were completed."
     elif result.action == "decline":
         return "❌ Complete operation cancelled."
     else:
