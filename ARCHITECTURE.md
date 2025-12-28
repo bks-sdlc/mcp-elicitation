@@ -1,5 +1,96 @@
 # Architecture Documentation
 
+## Project Overview
+
+This is an **MCP Todo Server** - a demonstration of building an interactive Model Context Protocol (MCP) server using FastMCP. The project showcases how to create intelligent tools that can interact with users through structured elicitation flows.
+
+**What it does:**
+- Manages a todo list via natural language commands in VS Code's Copilot chat
+- Demonstrates interactive data collection through MCP's elicitation feature
+- Shows both data discovery (getting current state) and user elicitation (collecting input) patterns
+
+**Key Technologies:**
+- **FastMCP**: Python framework for building MCP servers with built-in elicitation support
+- **Model Context Protocol (MCP)**: Open protocol that enables AI assistants to interact with external tools and data sources
+- **VS Code + GitHub Copilot**: The MCP host/client that connects users to the server
+
+**Why this architecture matters:**
+Instead of requiring all parameters upfront or making the AI guess missing information, elicitation enables tools to pause execution and ask users for exactly what they need, when they need it. This creates a more natural, conversational interaction pattern.
+
+---
+
+## What is Elicitation?
+
+**Elicitation** is a core MCP feature that enables tools to pause execution and request specific information from users interactively. Think of it as a way for your tools to have a conversation with the user rather than requiring all inputs upfront.
+
+### Why Elicitation is Needed
+
+Traditional tool APIs require all parameters to be provided when the tool is called. This creates several problems:
+
+1. **Missing Parameters**: Users often don't provide all required information initially
+2. **Ambiguous Requests**: Generic commands like "create a todo" lack specifics
+3. **Complex Workflows**: Multi-step operations need different information at different stages
+4. **Poor User Experience**: Forcing users to structure every request perfectly is unnatural
+
+Elicitation solves these by enabling:
+- **Progressive Disclosure**: Collect complex information step-by-step
+- **Dynamic Workflows**: Adapt tool behavior based on user responses
+- **Clarification Requests**: Get user confirmation or choices for ambiguous scenarios
+- **Natural Interaction**: Users can speak naturally, and tools ask for what they need
+
+### How Elicitation Works
+
+When a tool needs information from the user:
+
+1. **Tool Pauses**: The tool calls `await ctx.elicit(response_type=DataType)`
+2. **Server Sends Request**: FastMCP sends an elicitation request to the MCP client (VS Code)
+3. **User Interaction**: The client prompts the user for the requested data
+4. **User Responds**: The user can accept (provide data), decline, or cancel
+5. **Tool Resumes**: The tool receives the response and continues execution
+
+**Example:**
+```python
+@mcp.tool
+async def create_todo(ctx: Context) -> str:
+    # Tool pauses and asks user for structured input
+    result = await ctx.elicit("Please provide todo details", response_type=TodoInput)
+    
+    if result.action == "accept":
+        # User provided data - create the todo
+        todo = result.data
+        save_todo(todo)
+        return "Todo created!"
+    else:
+        # User declined or cancelled
+        return "Todo creation cancelled"
+```
+
+### Elicitation Response Types
+
+FastMCP supports various response types for different use cases:
+
+- **Scalar Types**: Simple values (`str`, `int`, `bool`)
+- **Constrained Options**: Limited choices (`["high", "medium", "low"]`, enums, Literal types)
+- **Structured Responses**: Complex data (dataclasses, Pydantic models, TypedDict)
+- **Multi-Select**: Allow users to select multiple values from options
+- **No Response**: Just confirmation/approval (`response_type=None`)
+
+### Multi-Turn Elicitation
+
+Tools can make multiple elicitation calls to gather information progressively:
+
+```python
+# First, ask for priority filter
+priority = await ctx.elicit("Filter by priority?", response_type=["all", "high", "medium", "low"])
+
+# Then, show filtered results and ask which to complete
+todos_to_complete = await ctx.elicit("Which todos to complete?", response_type=str)
+```
+
+This pattern is used in the `complete_todo()` tool to first filter todos by priority, then ask which ones to mark complete.
+
+---
+
 ## System Overview
 
 This document describes the end-to-end architecture of the MCP Todo application, including how VS Code (MCP Host) communicates with the FastMCP server.
