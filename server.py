@@ -9,7 +9,7 @@ Perfect for learning MCP and elicitation patterns!
 """
 
 from fastmcp import FastMCP, Context
-from dataclasses import dataclass
+from pydantic import BaseModel
 from typing import Literal
 import json
 from pathlib import Path
@@ -86,8 +86,7 @@ No todos yet! Ready to add your first task.
     return "\n".join(result)
 
 
-@dataclass
-class TodoInput:
+class TodoInput(BaseModel):
     """Structure for creating a todo."""
     title: str
     description: str
@@ -146,8 +145,7 @@ Use `list_todos` to see all your tasks!
         return "⚠️  Todo creation was cancelled."
 
 
-@dataclass
-class ListFilter:
+class ListFilter(BaseModel):
     """Structure for filtering todos."""
     status: Literal["all", "pending", "completed"]
 
@@ -211,8 +209,7 @@ status: pending
         return "⚠️  List operation was cancelled."
 
 
-@dataclass
-class CompleteTodoInput:
+class CompleteTodoInput(BaseModel):
     """Structure for completing todos."""
     todo_ids: str  # Comma-separated IDs like "1,2,3" or single ID like "1"
     priority_filter: Literal["all", "high", "medium", "low"] = "all"
@@ -236,8 +233,7 @@ async def complete_todo(ctx: Context) -> str:
         return "✅ No pending todos to complete!"
     
     # First elicit priority filter
-    @dataclass
-    class PriorityFilterInput:
+    class PriorityFilterInput(BaseModel):
         priority_filter: Literal["all", "high", "medium", "low"] = "all"
     
     filter_result = await ctx.elicit(
@@ -266,8 +262,7 @@ async def complete_todo(ctx: Context) -> str:
     prompt_lines.append("\n**Which todos would you like to complete?**\n")
     prompt_lines.append("Enter one or more todo IDs (comma-separated for multiple like '1,2,3')\n")
     
-    @dataclass
-    class TodoIdsInput:
+    class TodoIdsInput(BaseModel):
         todo_ids: str
     
     result = await ctx.elicit(
@@ -325,17 +320,17 @@ async def complete_todo(ctx: Context) -> str:
         return "⚠️  Complete operation was cancelled."
 
 
-@dataclass
-class DeleteTodoInput:
-    """Structure for deleting a todo."""
-    todo_id: int
+class DeleteTodoInput(BaseModel):
+    """Structure for deleting todos."""
+    todo_ids: str  # Comma-separated IDs like "1,2,3" or single ID like "1"
 
 
 @mcp.tool()
 async def delete_todo(ctx: Context) -> str:
     """
-    Delete a todo.
+    Delete todos.
     Shows available todos, then asks which to delete.
+    Supports deleting multiple todos at once.
     
     Returns:
         Confirmation message
@@ -347,15 +342,15 @@ async def delete_todo(ctx: Context) -> str:
         return "📋 No todos to delete!"
     
     # Build prompt with available todos
-    prompt_lines = ["🗑️  **Delete a Todo**\n\nYour todos:\n"]
+    prompt_lines = ["🗑️  **Delete Todos**\n\nYour todos:\n"]
     for todo in todos:
         priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}[todo['priority']]
         status_icon = "✅" if todo['status'] == 'completed' else "⏳"
         prompt_lines.append(f"  {status_icon} {priority_icon} [{todo['id']}] {todo['title']}")
     
-    prompt_lines.append("\n**Which todo would you like to delete?**\n")
+    prompt_lines.append("\n**Which todos would you like to delete?**\n")
+    prompt_lines.append("Enter one or more todo IDs (comma-separated for multiple like '1,2,3')\n")
     prompt_lines.append("⚠️  This cannot be undone!\n")
-    prompt_lines.append("```\ntodo_id: <number>\n```")
     
     result = await ctx.elicit(
         message="\n".join(prompt_lines),
@@ -363,15 +358,39 @@ async def delete_todo(ctx: Context) -> str:
     )
     
     if result.action == "accept":
-        input_data = result.data
-        for i, todo in enumerate(todos):
-            if todo['id'] == input_data.todo_id:
-                title = todo['title']
-                todos.pop(i)
-                save_todos(todos)
-                return f"🗑️  Deleted: {title}"
+        # Parse comma-separated IDs
+        try:
+            todo_ids = [int(id.strip()) for id in result.data.todo_ids.split(',')]
+        except ValueError:
+            return "❌ Invalid todo IDs format. Please use comma-separated numbers like '1,2,3' or a single number."
         
-        return f"❌ Todo #{input_data.todo_id} not found"
+        deleted = []
+        not_found = []
+        
+        # Delete todos in reverse order to avoid index issues
+        for todo_id in todo_ids:
+            found = False
+            for i, todo in enumerate(todos):
+                if todo['id'] == todo_id:
+                    deleted.append(f"#{todo_id} {todo['title']}")
+                    todos.pop(i)
+                    found = True
+                    break
+            if not found:
+                not_found.append(str(todo_id))
+        
+        # Save if any changes were made
+        if deleted:
+            save_todos(todos)
+        
+        # Build response message
+        messages = []
+        if deleted:
+            messages.append(f"🗑️  **Deleted ({len(deleted)}):**\n" + "\n".join(f"  • {t}" for t in deleted))
+        if not_found:
+            messages.append(f"❌ **Not found:** {', '.join(not_found)}")
+        
+        return "\n\n".join(messages) if messages else "No todos were deleted."
     elif result.action == "decline":
         return "❌ Delete operation cancelled."
     else:
