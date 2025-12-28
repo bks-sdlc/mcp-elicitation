@@ -77,8 +77,8 @@ This document describes the end-to-end architecture of the MCP Todo application,
 **Role**: The client application that hosts the MCP connection
 
 **Components**:
-- **GitHub Copilot Extension**: Provides chat interface for user interactions
-- **MCP Client**: Built into Copilot, handles MCP protocol communication
+- **VS Code MCP Client**: Built into VS Code, handles MCP protocol communication
+- **GitHub Copilot Extension**: Provides chat interface and uses VS Code's MCP client to interact with servers
 
 **Configuration** (`~/Library/Application Support/Code/User/mcp.json`):
 ```json
