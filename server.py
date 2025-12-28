@@ -214,7 +214,7 @@ status: pending
 @dataclass
 class CompleteTodoInput:
     """Structure for completing todos."""
-    todo_ids: list[int]
+    todo_ids: str  # Comma-separated IDs like "1,2,3" or single ID like "1"
     priority_filter: Literal["all", "high", "medium", "low"] = "all"
 
 
@@ -242,9 +242,9 @@ async def complete_todo(ctx: Context) -> str:
         prompt_lines.append(f"  {priority_icon} [{todo['id']}] {todo['title']}")
     
     prompt_lines.append("\n**Which todos would you like to complete?**\n")
-    prompt_lines.append("Enter one or more todo IDs (comma-separated for multiple)\n")
+    prompt_lines.append("Enter one or more todo IDs (comma-separated for multiple like '1,2,3')\n")
     prompt_lines.append("Optionally filter by priority: all, high, medium, or low\n")
-    prompt_lines.append("```\ntodo_ids: [1, 2, 3]\npriority_filter: high\n```")
+    prompt_lines.append("```\ntodo_ids: 1,2,3\npriority_filter: high\n```")
     
     result = await ctx.elicit(
         message="\n".join(prompt_lines),
@@ -253,6 +253,12 @@ async def complete_todo(ctx: Context) -> str:
     
     if result.action == "accept":
         input_data = result.data
+        
+        # Parse comma-separated IDs
+        try:
+            todo_ids = [int(id.strip()) for id in input_data.todo_ids.split(',')]
+        except ValueError:
+            return "❌ Invalid todo IDs format. Please use comma-separated numbers like '1,2,3' or a single number."
         
         # Filter by priority if specified
         target_todos = todos
@@ -263,7 +269,7 @@ async def complete_todo(ctx: Context) -> str:
         not_found = []
         already_completed = []
         
-        for todo_id in input_data.todo_ids:
+        for todo_id in todo_ids:
             found = False
             for todo in target_todos:
                 if todo['id'] == todo_id:
